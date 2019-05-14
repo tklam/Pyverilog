@@ -430,6 +430,21 @@ class VerilogParser(PLYParser):
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
 
+    def p_ioport_init_value(self, p):
+        'ioport : sigtypes portname EQUALS rvalue'
+        p[0] = self.create_ioport(p[1], p[2], lineno=p.lineno(2))
+        p.set_lineno(0, p.lineno(1))
+
+    def p_ioport_width_init_value(self, p):
+        'ioport : sigtypes width portname EQUALS rvalue'
+        p[0] = self.create_ioport(p[1], p[3], width=p[2], lineno=p.lineno(3))
+        p.set_lineno(0, p.lineno(1))
+
+    def p_ioport_portname_init_value(self, p):
+        'ioport : portname EQUALS rvalue'
+        p[0] = p[1]
+        p.set_lineno(0, p.lineno(1))
+
     def p_width(self, p):
         'width : LBRACKET expression COLON expression RBRACKET'
         p[0] = Width(p[2], p[4], lineno=p.lineno(1))
@@ -582,6 +597,16 @@ class VerilogParser(PLYParser):
 
     def p_declarray(self, p):
         'declname : ID length'
+        p[0] = (p[1], p[2])
+        p.set_lineno(0, p.lineno(1))
+
+    def p_declname_init_value(self, p):
+        'declname : ID EQUALS rvalue'
+        p[0] = (p[1], None)
+        p.set_lineno(0, p.lineno(1))
+
+    def p_declarray_init_value(self, p):
+        'declname : ID length EQUALS rvalue'
         p[0] = (p[1], p[2])
         p.set_lineno(0, p.lineno(1))
 
@@ -1305,6 +1330,11 @@ class VerilogParser(PLYParser):
 
     def p_edgesigs(self, p):
         'edgesigs : edgesigs SENS_OR edgesig'
+        p[0] = p[1] + (p[3],)
+        p.set_lineno(0, p.lineno(1))
+
+    def p_edgesigs_comma(self, p):
+        'edgesigs : edgesigs COMMA edgesig'
         p[0] = p[1] + (p[3],)
         p.set_lineno(0, p.lineno(1))
 

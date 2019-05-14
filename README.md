@@ -1,3 +1,14 @@
+This is yet another fork of Pyverilog
+==============================
+## How is this version different from the official version?
+Several rules were added to parser.py to handle the following Verilog lines:
+```Verilog
+    output reg   outDataMatchA = 0,
+    reg [31:0] tcpSeqA = 0,  tcpSeqB = 0, tcpSeqC = 0, tcpSeqD = 0;
+```
+The rvalues are simply discarded.
+
+
 Pyverilog
 ==============================
 

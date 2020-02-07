@@ -29,7 +29,9 @@ class Node(object):
     def show(self, buf=sys.stdout, offset=0, attrnames=False, showlineno=True):
         indent = 2
         lead = ' ' * offset
+
         buf.write(lead + self.__class__.__name__ + ': ')
+
         if self.attr_names:
             if attrnames:
                 nvlist = [(n, getattr(self, n)) for n in self.attr_names]
@@ -38,23 +40,31 @@ class Node(object):
                 vlist = [getattr(self, n) for n in self.attr_names]
                 attrstr = ', '.join('%s' % v for v in vlist)
             buf.write(attrstr)
+
         if showlineno:
             buf.write(' (at %s)' % self.lineno)
+
         buf.write('\n')
+
         for c in self.children():
             c.show(buf, offset + indent, attrnames, showlineno)
 
     def __eq__(self, other):
         if type(self) != type(other):
             return False
+
         self_attrs = tuple([getattr(self, a) for a in self.attr_names])
         other_attrs = tuple([getattr(other, a) for a in other.attr_names])
+
         if self_attrs != other_attrs:
             return False
+
         other_children = other.children()
+
         for i, c in enumerate(self.children()):
             if c != other_children[i]:
                 return False
+
         return True
 
     def __ne__(self, other):
@@ -149,10 +159,11 @@ class Portlist(Node):
 class Port(Node):
     attr_names = ('name', 'type',)
 
-    def __init__(self, name, width, type, lineno=0):
+    def __init__(self, name, width, dimensions, type, lineno=0):
         self.lineno = lineno
         self.name = name
         self.width = width
+        self.dimensions = dimensions
         self.type = type
 
     def children(self):
@@ -181,6 +192,20 @@ class Width(Node):
 
 class Length(Width):
     pass
+
+
+class Dimensions(Node):
+    attr_names = ()
+
+    def __init__(self, lengths, lineno=0):
+        self.lineno = lineno
+        self.lengths = lengths
+
+    def children(self):
+        nodelist = []
+        if self.lengths:
+            nodelist.extend(self.lengths)
+        return tuple(nodelist)
 
 
 class Identifier(Node):
@@ -247,16 +272,19 @@ class StringConst(Constant):
 class Variable(Value):
     attr_names = ('name', 'signed')
 
-    def __init__(self, name, width=None, signed=False, lineno=0):
+    def __init__(self, name, width=None, signed=False, dimensions=None, lineno=0):
         self.lineno = lineno
         self.name = name
         self.width = width
         self.signed = signed
+        self.dimensions = dimensions
 
     def children(self):
         nodelist = []
         if self.width:
             nodelist.append(self.width)
+        if self.dimensions:
+            nodelist.append(self.dimensions)
         return tuple(nodelist)
 
 
@@ -282,44 +310,6 @@ class Wire(Variable):
 
 class Reg(Variable):
     pass
-
-
-class WireArray(Variable):
-    attr_names = ('name', 'signed')
-
-    def __init__(self, name, width, length, signed=False, lineno=0):
-        self.lineno = lineno
-        self.name = name
-        self.width = width
-        self.length = length
-        self.signed = signed
-
-    def children(self):
-        nodelist = []
-        if self.width:
-            nodelist.append(self.width)
-        if self.length:
-            nodelist.append(self.length)
-        return tuple(nodelist)
-
-
-class RegArray(Variable):
-    attr_names = ('name', 'signed')
-
-    def __init__(self, name, width, length, signed=False, lineno=0):
-        self.lineno = lineno
-        self.name = name
-        self.width = width
-        self.length = length
-        self.signed = signed
-
-    def children(self):
-        nodelist = []
-        if self.width:
-            nodelist.append(self.width)
-        if self.length:
-            nodelist.append(self.length)
-        return tuple(nodelist)
 
 
 class Integer(Variable):
@@ -360,6 +350,7 @@ class Parameter(Node):
         self.value = value
         self.width = width
         self.signed = signed
+        self.dimensions = None
 
     def children(self):
         nodelist = []
@@ -607,6 +598,10 @@ class Srl(Operator):
     pass
 
 
+class Sla(Operator):
+    pass
+
+
 class Sra(Operator):
     pass
 
@@ -739,6 +734,10 @@ class AlwaysFF(Always):
 
 
 class AlwaysComb(Always):
+    pass
+
+
+class AlwaysLatch(Always):
     pass
 
 

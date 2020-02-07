@@ -29,32 +29,47 @@ import subprocess
 
 class VerilogPreprocessor(object):
     def __init__(self, filelist, outputfile='pp.out', include=None, define=None):
+
+        if not isinstance(filelist, (tuple, list)):
+            filelist = list(filelist)
+
         self.filelist = filelist
-        cmd = []
-        cmd.append('iverilog ')
-        if include:
-            for inc in include:
-                cmd.append('-I ')
-                cmd.append(inc)
-                cmd.append(' ')
-        if define:
-            for d in define:
-                cmd.append('-D')
-                cmd.append(d)
-                cmd.append(' ')
-        cmd.append('-E -o ')
-        cmd.append(outputfile)
-        self.iv = ''.join(cmd)
+
+        iverilog = os.environ.get('PYVERILOG_IVERILOG')
+        if iverilog is None:
+            iverilog = 'iverilog'
+
+        if include is None:
+            include = ()
+
+        if define is None:
+            define = ()
+
+        self.iv = [iverilog]
+
+        for inc in include:
+            self.iv.append('-I')
+            self.iv.append(inc)
+
+        for dfn in define:
+            self.iv.append('-D')
+            self.iv.append(dfn)
+
+        self.iv.append('-E')
+        self.iv.append('-o')
+        self.iv.append(outputfile)
 
     def preprocess(self):
-        cmd = self.iv + ' '
-        for f in self.filelist:
-            cmd += ' ' + f
-        subprocess.call(cmd, shell=True)
+        cmd = self.iv + list(self.filelist)
+        subprocess.call(cmd)
 
 
-def preprocess(filelist,
-               output='preprocess.output', include=None, define=None):
+def preprocess(
+    filelist,
+    output='preprocess.output',
+    include=None,
+    define=None
+):
     pre = VerilogPreprocessor(filelist, output, include, define)
     pre.preprocess()
     text = open(output).read()

@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 import sys
 import os
+import pathlib
 
 from pyverilog.vparser.ply.yacc import yacc
 from pyverilog.vparser.plyparser import PLYParser, Coord, ParseError
@@ -36,7 +37,8 @@ class VerilogParser(PLYParser):
         ('left', 'LOR'),
         ('left', 'LAND'),
         ('left', 'OR'),
-        ('left', 'AND', 'XOR', 'XNOR'),
+        ('left', 'XOR', 'XNOR'),
+        ('left', 'AND'),
         ('left', 'EQ', 'NE', 'EQL', 'NEL'),
         ('left', 'LT', 'GT', 'LE', 'GE'),
         ('left', 'LSHIFT', 'RSHIFT', 'LSHIFTA', 'RSHIFTA'),
@@ -48,14 +50,18 @@ class VerilogParser(PLYParser):
         # -> Strong
     )
 
-    def __init__(self):
+    def __init__(self, outputdir=".", debug=True):
         self.lexer = VerilogLexer(error_func=self._lexer_error_func)
         self.lexer.build()
 
         self.tokens = self.lexer.tokens
-        #self.parser = yacc(module=self)
-        # Use this if you want to build the parser using LALR(1) instead of SLR
-        self.parser = yacc(module=self, method="LALR")
+        pathlib.Path(outputdir).mkdir(parents=True, exist_ok=True)
+        self.parser = yacc(
+            module=self,
+            method="LALR",
+            outputdir=outputdir,
+            debug=debug
+        )
 
     def _lexer_error_func(self, msg, line, column):
         self._parse_error(msg, self._coord(line, column))
@@ -255,15 +261,13 @@ class VerilogParser(PLYParser):
 
     def p_ports(self, p):
         'ports : ports COMMA portname'
-        wid = None
-        port = Port(name=p[3], width=wid, type=None, lineno=p.lineno(1))
+        port = Port(name=p[3], width=None, dimensions=None, type=None, lineno=p.lineno(1))
         p[0] = p[1] + (port,)
         p.set_lineno(0, p.lineno(1))
 
     def p_ports_one(self, p):
         'ports : portname'
-        wid = None
-        port = Port(name=p[1], width=wid, type=None, lineno=p.lineno(1))
+        port = Port(name=p[1], width=None, dimensions=None, type=None, lineno=p.lineno(1))
         p[0] = (port,)
         p.set_lineno(0, p.lineno(1))
 
@@ -365,7 +369,7 @@ class VerilogParser(PLYParser):
         p[0] = (p[1],)
         p.set_lineno(0, p.lineno(1))
 
-    def create_ioport(self, sigtypes, name, width=None, lineno=0):
+    def create_ioport(self, sigtypes, name, width=None, dimensions=None, lineno=0):
         self.typecheck_ioport(sigtypes)
         first = None
         second = None
@@ -373,18 +377,23 @@ class VerilogParser(PLYParser):
         if 'signed' in sigtypes:
             signed = True
         if 'input' in sigtypes:
-            first = Input(name=name, width=width, signed=signed, lineno=lineno)
+            first = Input(name=name, width=width, signed=signed,
+                          dimensions=dimensions, lineno=lineno)
         if 'output' in sigtypes:
-            first = Output(name=name, width=width,
-                           signed=signed, lineno=lineno)
+            first = Output(name=name, width=width, signed=signed,
+                           dimensions=dimensions, lineno=lineno)
         if 'inout' in sigtypes:
-            first = Inout(name=name, width=width, signed=signed, lineno=lineno)
+            first = Inout(name=name, width=width, signed=signed,
+                          dimensions=dimensions, lineno=lineno)
         if 'wire' in sigtypes:
-            second = Wire(name=name, width=width, signed=signed, lineno=lineno)
+            second = Wire(name=name, width=width, signed=signed,
+                          dimensions=dimensions, lineno=lineno)
         if 'reg' in sigtypes:
-            second = Reg(name=name, width=width, signed=signed, lineno=lineno)
+            second = Reg(name=name, width=width, signed=signed,
+                         dimensions=dimensions, lineno=lineno)
         if 'tri' in sigtypes:
-            second = Tri(name=name, width=width, signed=signed, lineno=lineno)
+            second = Tri(name=name, width=width, signed=signed,
+                         dimensions=dimensions, lineno=lineno)
         return Ioport(first, second, lineno=lineno)
 
     def typecheck_ioport(self, sigtypes):
@@ -415,6 +424,11 @@ class VerilogParser(PLYParser):
         p[0] = self.create_ioport(p[1], p[3], width=p[2], lineno=p.lineno(3))
         p.set_lineno(0, p.lineno(1))
 
+    def p_ioport_dimensions(self, p):
+        'ioport : sigtypes width portname dimensions'
+        p[0] = self.create_ioport(p[1], p[3], width=p[2], dimensions=p[4], lineno=p.lineno(3))
+        p.set_lineno(0, p.lineno(1))
+
     def p_ioport_head(self, p):
         'ioport_head : sigtypes portname'
         p[0] = self.create_ioport(p[1], p[2], lineno=p.lineno(2))
@@ -423,6 +437,11 @@ class VerilogParser(PLYParser):
     def p_ioport_head_width(self, p):
         'ioport_head : sigtypes width portname'
         p[0] = self.create_ioport(p[1], p[3], width=p[2], lineno=p.lineno(3))
+        p.set_lineno(0, p.lineno(1))
+
+    def p_ioport_head_dimensions(self, p):
+        'ioport_head : sigtypes width portname dimensions'
+        p[0] = self.create_ioport(p[1], p[3], width=p[2], dimensions=p[4], lineno=p.lineno(3))
         p.set_lineno(0, p.lineno(1))
 
     def p_ioport_portname(self, p):
@@ -453,6 +472,18 @@ class VerilogParser(PLYParser):
     def p_length(self, p):
         'length : LBRACKET expression COLON expression RBRACKET'
         p[0] = Length(p[2], p[4], lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
+
+    def p_dimensions(self, p):
+        'dimensions : dimensions length'
+        dims = p[1].lengths + [p[2]]
+        p[0] = Dimensions(dims, lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
+
+    def p_dimensions_one(self, p):
+        'dimensions : length'
+        dims = [p[1]]
+        p[0] = Dimensions(dims, lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
 
     def p_items(self, p):
@@ -488,6 +519,7 @@ class VerilogParser(PLYParser):
         | always
         | always_ff
         | always_comb
+        | always_latch
         | initial
         | instance
         | function
@@ -498,38 +530,30 @@ class VerilogParser(PLYParser):
         p.set_lineno(0, p.lineno(1))
 
     # Signal Decl
-    def create_decl(self, sigtypes, name, width=None, length=None, lineno=0):
-        self.typecheck_decl(sigtypes, length)
+    def create_decl(self, sigtypes, name, width=None, dimensions=None, lineno=0):
+        self.typecheck_decl(sigtypes, dimensions)
         decls = []
         signed = False
         if 'signed' in sigtypes:
             signed = True
         if 'input' in sigtypes:
             decls.append(Input(name=name, width=width,
-                               signed=signed, lineno=lineno))
+                               signed=signed, lineno=lineno, dimensions=dimensions))
         if 'output' in sigtypes:
             decls.append(Output(name=name, width=width,
-                                signed=signed, lineno=lineno))
+                                signed=signed, lineno=lineno, dimensions=dimensions))
         if 'inout' in sigtypes:
             decls.append(Inout(name=name, width=width,
-                               signed=signed, lineno=lineno))
+                               signed=signed, lineno=lineno, dimensions=dimensions))
         if 'wire' in sigtypes:
-            if length:
-                decls.append(WireArray(name=name, width=width,
-                                       signed=signed, length=length, lineno=lineno))
-            else:
-                decls.append(Wire(name=name, width=width,
-                                  signed=signed, lineno=lineno))
+            decls.append(Wire(name=name, width=width,
+                              signed=signed, lineno=lineno, dimensions=dimensions))
         if 'reg' in sigtypes:
-            if length:
-                decls.append(RegArray(name=name, width=width,
-                                      signed=signed, length=length, lineno=lineno))
-            else:
-                decls.append(Reg(name=name, width=width,
-                                 signed=signed, lineno=lineno))
+            decls.append(Reg(name=name, width=width,
+                             signed=signed, lineno=lineno, dimensions=dimensions))
         if 'tri' in sigtypes:
             decls.append(Tri(name=name, width=width,
-                             signed=signed, lineno=lineno))
+                             signed=signed, lineno=lineno, dimensions=dimensions))
         if 'supply0' in sigtypes:
             decls.append(Supply(name=name, value=IntConst('0', lineno=lineno),
                                 width=width, signed=signed, lineno=lineno))
@@ -538,13 +562,10 @@ class VerilogParser(PLYParser):
                                 width=width, signed=signed, lineno=lineno))
         return decls
 
-    def typecheck_decl(self, sigtypes, length=None):
-        if length and 'input' in sigtypes:
-            raise ParseError("Syntax Error")
-        if length and 'output' in sigtypes:
-            raise ParseError("Syntax Error")
-        if length and 'inout' in sigtypes:
-            raise ParseError("Syntax Error")
+    def typecheck_decl(self, sigtypes, dimensions=None):
+        if ('supply0' in sigtypes or 'supply1' in sigtypes) and \
+           dimensions is not None:
+            raise ParseError("SyntaxError")
         if len(sigtypes) == 1 and 'signed' in sigtypes:
             raise ParseError("Syntax Error")
         if 'input' in sigtypes and 'output' in sigtypes:
@@ -565,8 +586,8 @@ class VerilogParser(PLYParser):
     def p_decl(self, p):
         'decl : sigtypes declnamelist SEMICOLON'
         decllist = []
-        for rname, rlength in p[2]:
-            decllist.extend(self.create_decl(p[1], rname, length=rlength,
+        for rname, rdimensions in p[2]:
+            decllist.extend(self.create_decl(p[1], rname, dimensions=rdimensions,
                                              lineno=p.lineno(2)))
         p[0] = Decl(tuple(decllist), lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
@@ -574,8 +595,8 @@ class VerilogParser(PLYParser):
     def p_decl_width(self, p):
         'decl : sigtypes width declnamelist SEMICOLON'
         decllist = []
-        for rname, rlength in p[3]:
-            decllist.extend(self.create_decl(p[1], rname, width=p[2], length=rlength,
+        for rname, rdimensions in p[3]:
+            decllist.extend(self.create_decl(p[1], rname, width=p[2], dimensions=rdimensions,
                                              lineno=p.lineno(3)))
         p[0] = Decl(tuple(decllist), lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
@@ -596,7 +617,7 @@ class VerilogParser(PLYParser):
         p.set_lineno(0, p.lineno(1))
 
     def p_declarray(self, p):
-        'declname : ID length'
+        'declname : ID dimensions'
         p[0] = (p[1], p[2])
         p.set_lineno(0, p.lineno(1))
 
@@ -1039,7 +1060,7 @@ class VerilogParser(PLYParser):
 
     def p_expression_sla(self, p):
         'expression : expression LSHIFTA expression'
-        p[0] = Sll(p[1], p[3], lineno=p.lineno(1))
+        p[0] = Sla(p[1], p[3], lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
 
     def p_expression_sra(self, p):
@@ -1298,10 +1319,17 @@ class VerilogParser(PLYParser):
     def p_always_ff(self, p):
         'always_ff : ALWAYS_FF senslist always_statement'
         p[0] = AlwaysFF(p[2], p[3], lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
 
     def p_always_comb(self, p):
         'always_comb : ALWAYS_COMB senslist always_statement'
         p[0] = AlwaysComb(p[2], p[3], lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
+
+    def p_always_latch(self, p):
+        'always_latch : ALWAYS_LATCH senslist always_statement'
+        p[0] = AlwaysLatch(p[2], p[3], lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
 
     def p_sens_egde_paren(self, p):
         'senslist : AT LPAREN edgesigs RPAREN'
@@ -1532,9 +1560,9 @@ class VerilogParser(PLYParser):
         """
         if isinstance(p[1], Decl):
             for r in p[1].list:
-                if (not isinstance(r, Reg) and not isinstance(r, Wire)
-                    and not isinstance(r, Integer) and not isinstance(r, Real)
-                        and not isinstance(r, Parameter) and not isinstance(r, Localparam)):
+                if (not isinstance(r, Reg) and not isinstance(r, Wire) and
+                    not isinstance(r, Integer) and not isinstance(r, Real) and
+                        not isinstance(r, Parameter) and not isinstance(r, Localparam)):
                     raise ParseError("Syntax Error")
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
@@ -1657,7 +1685,6 @@ class VerilogParser(PLYParser):
         'unique_case_statement : UNIQUE CASE LPAREN case_comp RPAREN casecontent_statements ENDCASE'
         p[0] = UniqueCaseStatement(p[3], p[5], lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
-
 
     def p_case_comp(self, p):
         'case_comp : expression'
@@ -2077,8 +2104,8 @@ class VerilogParser(PLYParser):
         """
         if isinstance(p[1], Decl):
             for r in p[1].list:
-                if (not isinstance(r, Input) and not isinstance(r, Reg)
-                        and not isinstance(r, Integer)):
+                if (not isinstance(r, Input) and not isinstance(r, Reg) and
+                        not isinstance(r, Integer)):
                     raise ParseError("Syntax Error")
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
@@ -2146,8 +2173,8 @@ class VerilogParser(PLYParser):
         """
         if isinstance(p[1], Decl):
             for r in p[1].list:
-                if (not isinstance(r, Input) and not isinstance(r, Reg)
-                        and not isinstance(r, Integer)):
+                if (not isinstance(r, Input) and not isinstance(r, Reg) and
+                        not isinstance(r, Integer)):
                     raise ParseError("Syntax Error")
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
@@ -2250,13 +2277,16 @@ class VerilogCodeParser(object):
 
     def __init__(self, filelist, preprocess_output='preprocess.output',
                  preprocess_include=None,
-                 preprocess_define=None):
+                 preprocess_define=None,
+                 outputdir=".",
+                 debug=True
+                 ):
         self.preprocess_output = preprocess_output
         self.directives = ()
         self.preprocessor = VerilogPreprocessor(filelist, preprocess_output,
                                                 preprocess_include,
                                                 preprocess_define)
-        self.parser = VerilogParser()
+        self.parser = VerilogParser(outputdir=outputdir, debug=debug)
 
     def preprocess(self):
         self.preprocessor.preprocess()
@@ -2274,10 +2304,20 @@ class VerilogCodeParser(object):
         return self.directives
 
 
-def parse(filelist, preprocess_include=None, preprocess_define=None):
-    codeparser = VerilogCodeParser(filelist,
-                                   preprocess_include=preprocess_include,
-                                   preprocess_define=preprocess_define)
+def parse(
+    filelist,
+    preprocess_include=None,
+    preprocess_define=None,
+    outputdir=".",
+    debug=True
+):
+    codeparser = VerilogCodeParser(
+        filelist,
+        preprocess_include=preprocess_include,
+        preprocess_define=preprocess_define,
+        outputdir=outputdir,
+        debug=debug
+    )
     ast = codeparser.parse()
     directives = codeparser.get_directives()
     return ast, directives
